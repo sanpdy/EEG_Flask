@@ -1,5 +1,6 @@
 from cortex import Cortex
 import time
+from threading import Timer
 
 class Record():
     def __init__(self, app_client_id, app_client_secret, **kwargs):
@@ -10,24 +11,10 @@ class Record():
         self.c.bind(warn_cortex_stop_all_sub=self.on_warn_cortex_stop_all_sub)
         self.c.bind(export_record_done=self.on_export_record_done)
         self.c.bind(inform_error=self.on_inform_error)
+        self.headset_found = False
+        self.search_timer = None
 
-    def start(self, record_duration_s=20, headsetId=''):
-        """
-        To start data recording and exporting process as below
-        (1) check access right -> authorize -> connect headset->create session
-        (2) start record --> stop record --> disconnect headset --> export record
-        Parameters
-        ----------
-        record_duration_s: int, optional
-            duration of record. default is 20 seconds
-
-        headsetId: string , optional
-             id of wanted headet which you want to work with it.
-             If the headsetId is empty, the first headset in list will be set as wanted headset
-        Returns
-        -------
-        None
-        """
+    def start(self, record_duration_s=20, headsetId='', search_timeout=10):
         print('start record -------------------------')
         self.record_duration_s = record_duration_s
         print('record_duration_s:', record_duration_s)
@@ -35,7 +22,18 @@ class Record():
             self.c.set_wanted_headset(headsetId)
         print('start authorize -------------------------')
         print('Attempting open')
+        
+        # Set a timer to stop searching after search_timeout seconds
+        self.search_timer = Timer(search_timeout, self.stop_search)
+        self.search_timer.start()
+        
         self.c.open()
+
+    def stop_search(self):
+        if not self.headset_found:
+            print("Headset not found within the timeout period.")
+            self.c.close()
+            self.search_timer = None
 
     # custom exception hook
     def custom_hook(args):
@@ -43,20 +41,25 @@ class Record():
         # report the failure
         print(f'Thread failed: {args.exc_value}')
 
-    def create_record(self, record_title, **kwargs):
-        """
-        To create a record
-        Parameters
-        ----------
-        record_title : string, required
-             title  of record
-        other optional params: Please reference to https://emotiv.gitbook.io/cortex-api/records/createrecord
-        Returns
-        -------
-        None
-        """
-        print('create record -------------------------')
-        self.c.create_record(record_title, **kwargs)
+    
+    def on_create_session_done(self, *args, **kwargs):
+        print('on_create_session_done')
+        self.headset_found = True
+        if self.search_timer:
+            self.search_timer.cancel()
+            self.search_timer = None
+
+        # create a record
+        self.create_record(self.record_title, description=self.record_description)
+
+    def on_inform_error(self, *args, **kwargs):
+        print('on_inform_error')
+        error_data = kwargs.get('error_data')
+        print(error_data)
+        if "queryHeadsets" in str(error_data):
+            print("Error querying headsets. Headset might not be connected.")
+            self.stop_search()
+
 
     def stop_record(self):
         print('stop record -------------------------')
@@ -85,13 +88,6 @@ class Record():
             time.sleep(1)
             length+=1
         print('wait for recording end -------------------------')
-
-    # callbacks functions
-    def on_create_session_done(self, *args, **kwargs):
-        print('on_create_session_done')
-
-        # create a record
-        self.create_record(self.record_title, description=self.record_description)
 
     def on_create_record_done(self, *args, **kwargs):
         
@@ -134,15 +130,10 @@ class Record():
         print(data)
         self.c.close()
 
-    def on_inform_error(self, *args, **kwargs):
-        print('on_inform_error')
-        error_data = kwargs.get('error_data')
-        print(error_data)
-
 
 def record_main(record_duration_s: int):
-    app_client_id = ''
-    app_client_secret = ''
+    app_client_id = 'fpCi6nTQcc4Cts2sIAsXNL1xkXOGmIorihpdNbep'
+    app_client_secret = '7KBmJhfKAgHvWm9FfMZLaHv3x0EfRERToaRuL3cvJd3JL93ljIZlqD6ndM9UYcT181Okb49m8GRA0oI1Ntanw9VfXC7TqI3440l3aUYNDrJUdw2iduvWQzSbyLu5YAc0'
 
     r = Record(app_client_id, app_client_secret)
 

@@ -5,12 +5,13 @@ import io
 from PIL import Image
 import numpy as np
 from record import Record  # Import the Record class
+import threading
 
 app = Flask(__name__)
 
 # Load the dataset
-train_df = pd.read_csv('../samples/mnist_train.csv')
-test_df = pd.read_csv('../samples/mnist_test.csv')
+train_df = pd.read_csv('samples/mnist_train.csv')
+test_df = pd.read_csv('samples/mnist_test.csv')
 data = pd.concat([train_df, test_df], ignore_index=True)
 
 # Initialize state
@@ -22,6 +23,7 @@ record_duration_s = 10
 app_client_id = 'fpCi6nTQcc4Cts2sIAsXNL1xkXOGmIorihpdNbep'
 app_client_secret = '7KBmJhfKAgHvWm9FfMZLaHv3x0EfRERToaRuL3cvJd3JL93ljIZlqD6ndM9UYcT181Okb49m8GRA0oI1Ntanw9VfXC7TqI3440l3aUYNDrJUdw2iduvWQzSbyLu5YAc0'
 record = Record(app_client_id, app_client_secret)
+record_thread = None
 
 @app.route('/')
 def index():
@@ -29,13 +31,39 @@ def index():
 
 @app.route('/start_recording')
 def start_recording():
-    record.start(record_duration_s=record_duration_s)
-    return jsonify(success=True)
+    global record_thread
+    if record_thread and record_thread.is_alive():
+        return jsonify(success=False, message="Recording already in progress")
+    
+    record_thread = threading.Thread(target=start_record_thread)
+    record_thread.start()
+    return jsonify(success=True, message="Starting recording process")
+
+def start_record_thread():
+    try:
+        record.start(record_duration_s=record_duration_s, search_timeout=10)
+        if not record.headset_found:
+            print("Headset not found")
+            # You might want to emit an event to the frontend here
+    except Exception as e:
+        print(f"Error in recording: {str(e)}")
+        # You might want to emit an event to the frontend here
 
 @app.route('/stop_recording')
 def stop_recording():
-    record.stop_record()
-    return jsonify(success=True)
+    if record_thread and record_thread.is_alive():
+        record.stop_record()
+        record_thread.join()
+        return jsonify(success=True, message="Recording stopped")
+    else:
+        return jsonify(success=False, message="No active recording to stop")
+
+@app.route('/recording_status')
+def recording_status():
+    if record_thread and record_thread.is_alive():
+        return jsonify(status="Recording", headset_found=record.headset_found)
+    else:
+        return jsonify(status="Not Recording", headset_found=record.headset_found)
 
 @app.route('/previous_image')
 def previous_image():

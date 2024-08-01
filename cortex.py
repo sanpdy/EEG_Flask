@@ -68,7 +68,7 @@ class Cortex(Dispatcher):
                 'new_com_data', 'new_fe_data', 'new_eeg_data', 'new_mot_data', 'new_dev_data', 
                 'new_met_data', 'new_pow_data', 'new_sys_data']
     def __init__(self, client_id, client_secret, debug_mode=False, **kwargs):
-        
+            
         self.session_id = ''
         self.headset_id = ''
         self.debug = debug_mode
